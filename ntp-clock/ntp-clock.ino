@@ -21,11 +21,12 @@ String weatherKey = "abc"; // openweather api key
 String weatherLang = "&lang=en";
 String cityID = "1275004"; // Cityid from open weather
 const char *weatherHost = "api.openweathermap.org";
+#define WEATHER_TIMEOUT 200
 // =======================================================================
 
 unsigned long epochTime;
 
-String deg = String(char('~' + 25));
+String deg = "°";
 
 String weatherMain = "";
 String weatherDescription = "";
@@ -37,6 +38,12 @@ float tempRealFeel;
 float tempMin, tempMax;
 int clouds;
 float windSpeed;
+float windDeg;
+
+String sunrise;
+String sunset;
+
+String pollution;
 
 int date;
 String month;
@@ -280,8 +287,8 @@ void setup()
     Serial.println("");
     Serial.print("Connected: ");
     Serial.println(WiFi.localIP());
-    P.setZoneEffect(0, true, PA_FLIP_LR);
-    P.setZoneEffect(0, true, PA_FLIP_UD);
+    // P.setZoneEffect(0, true, PA_FLIP_LR);
+    // P.setZoneEffect(0, true, PA_FLIP_UD);
     timeClient.begin();
 #if ENA_SPRITE
     P.setSpriteData(pacman1, W_PMAN1, F_PMAN1, pacman2, W_PMAN2, F_PMAN2);
@@ -292,6 +299,7 @@ void setup()
         delay(1);
     }
     getWeatherData();
+    getPollutionData();
 }
 
 void loop()
@@ -301,6 +309,7 @@ void loop()
     animateScreenAndShow();
     delay(1);
     getWeatherData();
+    getPollutionData();
 }
 
 void updateTimeDate()
@@ -336,7 +345,7 @@ void updateTimeDate()
 
 void animateScreenAndShow()
 {
-    int stage = 9;
+    int stage = 21;
     while (stage > 0)
     {
         animateCurr(getDataToShow(stage), getCurrAnim(stage));
@@ -358,6 +367,31 @@ int getCurrAnim(int currStage)
 {
     switch (currStage)
     {
+    case 21:
+        return 3;
+    case 20:
+        return 19;
+    case 19:
+        return 5;
+    case 18:
+        return 1;
+    case 17:
+        return 12;
+    case 16:
+        return 26;
+    case 15:
+        return 3;
+    case 14:
+        return 12;
+    case 13:
+        return 8;
+    case 12:
+        return 3;
+    case 11:
+        return 3;
+    case 10:
+        return 3;
+
     case 9:
         return 19;
     case 8:
@@ -385,27 +419,81 @@ String getDataToShow(int currStage)
 {
     switch (currStage)
     {
+    case 21:
+        return dayOfWeek + " " + String(date) + " " + month + ", " + String(year);
+    case 20:
+        return getFormattedTime(hour, minute);
+    case 19:
+        return meridiem;
+    case 18:
+        return "Temp: ";
+    case 17:
+        return String(temp, 1) + deg + "C";
+    case 16:
+        return "Range: ";
+    case 15:
+        return String(tempMin, 1) + deg + "C - " + String(tempMax, 1) + deg + "C";
+    case 14:
+        return "Realfeel: ";
+
+    case 13:
+        return String(tempRealFeel, 1) + deg + "C";
+    case 12:
+        return "Weather: ";
+    case 11:
+        return weatherDescription;
+    case 10:
+        return "Humidity: ";
     case 9:
-        return dayOfWeek;
+        return String(humidity) + "%";
     case 8:
-        return String(date) + " " + month + ", " + String(year);
+        return "Pressure: ";
     case 7:
-        return String(hour) + ":" + String(minute) + " " + meridiem;
+        return String(pressure) + " hPa";
     case 6:
-        return "Temp: " + String(temp, 1) + deg + "C";
+        return "Clouds: ";
     case 5:
-        return "Realfeel: " + String(tempRealFeel, 1) + deg + "C";
+        return String(clouds) + "%";
     case 4:
-        return "Weather: " + weatherDescription;
+        return "Wind: ";
     case 3:
-        return "Humidity: " + String(humidity) + "%";
+        return getWindWithCardinalDir();
     case 2:
-        return "Pressure: " + String(pressure) + " hPa  ";
+        return "Sunrise: " + sunrise + " | Sunset: " + sunset;
     case 1:
-        return "Clouds: " + String(clouds) + "%";
+        return pollution;
     default:
-        return "Wind: " + String(windSpeed, 1) + " m/s";
+        return "Thanks";
     }
+}
+
+String getWindWithCardinalDir()
+{
+    String directions[] = {"N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"};
+    return String(windSpeed, 1) + " m/s " + directions[int((windDeg + 11.25) / 22.5) % 16];
+}
+
+String getFormattedTime(int hr, int mins)
+{
+    String strHour, strMin;
+    if (hr / 10 > 0)
+    {
+        strHour = String(hr);
+    }
+    else
+    {
+        strHour = "0" + String(hr);
+    }
+
+    if (mins / 10 > 0)
+    {
+        strMin = String(mins);
+    }
+    else
+    {
+        strMin = "0" + String(mins);
+    }
+    return strHour + ":" + strMin;
 }
 
 void getWeatherData()
@@ -427,11 +515,10 @@ void getWeatherData()
         return;
     }
     String line;
-    int repeatCounter = 0;
-    while (!client.available() && repeatCounter < 20)
+    unsigned long oldTime = millis();
+    while (!client.available() && (millis() - oldTime) < WEATHER_TIMEOUT)
     {
-        delay(5);
-        repeatCounter++;
+        delay(2);
     }
     client.setNoDelay(false);
     bool jsonStarted = false;
@@ -466,5 +553,100 @@ void getWeatherData()
     tempMax = root["main"]["temp_max"];
     tempRealFeel = root["main"]["feels_like"];
     windSpeed = root["wind"]["speed"];
+    windDeg = root["wind"]["deg"];
     clouds = root["clouds"]["all"];
+    sunrise = convertEpochToTimeString(root["sys"]["sunrise"].as<unsigned long>() + utcOffsetInSeconds);
+    sunset = convertEpochToTimeString(root["sys"]["sunset"].as<unsigned long>() + utcOffsetInSeconds);
+}
+
+void getPollutionData()
+{
+    String payload = String("GET http://api.openweathermap.org/data/2.5/air_pollution?lat=22.5726&lon=88.3639&appid=") + weatherKey + " HTTP/1.1\r\n" +
+                     "Host: " + weatherHost + "\r\nUser-Agent: ArduinoWiFi/1.1\r\n" +
+                     "Connection: close\r\n\r\n";
+    WiFiClient client;
+    Serial.print("connecting to ");
+    Serial.println(weatherHost);
+    Serial.println(payload);
+    if (client.connect(weatherHost, 80))
+    {
+        client.println(payload);
+    }
+    else
+    {
+        Serial.println("connection failed");
+        return;
+    }
+    String line;
+    unsigned long oldTime = millis();
+    while (!client.available() && (millis() - oldTime) < WEATHER_TIMEOUT)
+    {
+        delay(2);
+    }
+    client.setNoDelay(false);
+    bool jsonStarted = false;
+    while (client.connected())
+    {
+        String currline = client.readStringUntil('\n');
+        if (jsonStarted == false && currline.startsWith("{"))
+        {
+            jsonStarted = true;
+        }
+        if (jsonStarted)
+        {
+            Serial.print(currline);
+            line += currline;
+        }
+    }
+    client.stop();
+
+    DynamicJsonBuffer jsonBuf;
+    JsonObject &root = jsonBuf.parseObject(line);
+    if (!root.success())
+    {
+        Serial.println("parseObject() failed");
+        Serial.println(line);
+        return;
+    }
+
+    pollution = "AQI: ";
+
+    String aqi_states[] = {"Good", "Fair", "Moderate", "Poor", "Very Poor"};
+    pollution = pollution + aqi_states[(root["list"][0]["main"]["aqi"].as<int>()) - 1] + " | (in ug/m3) - ";
+
+    JsonObject &documentRoot = root["list"][0]["components"];
+
+    for (JsonPair keyValue : documentRoot)
+    {
+        pollution = pollution + keyValue.key;
+        pollution = pollution + ": ";
+        pollution = pollution + String(keyValue.value.as<float>(), 1);
+        pollution = pollution + ", ";
+    }
+}
+
+String convertEpochToTimeString(unsigned long epch)
+{
+    struct tm *ptm = gmtime((time_t *)&epch);
+
+    String local_meridian;
+    int local_hour, local_min;
+    local_hour = ptm->tm_hour;
+    local_min = ptm->tm_min;
+
+    if (local_hour >= 12)
+    {
+        local_meridian = "PM";
+        local_hour = local_hour - 12;
+    }
+    else
+    {
+        local_meridian = "AM";
+    }
+    if (local_hour == 0)
+    {
+        local_hour = 12;
+    }
+
+    return getFormattedTime(local_hour, local_min) + " " + local_meridian;
 }
